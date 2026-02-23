@@ -9,8 +9,8 @@ import (
 )
 
 type PlayGameRepository interface {
-	SaveGameStatus(status models.GameStatus) (int, error)
-	GetGames() ([]models.GameResponse, error)
+	GetGames(arcadeId string) ([]models.GameResponse, error)
+	FetchGameDetails(gameId uint16) (models.GameDetails, error)
 	FetchPrices() (models.PriceMap, error)
 	CheckGameCode(code string) (models.GameDetails, error)
 	ValidateTimeAndPrice(gameId uint16, price uint16, playTime *uint16) error
@@ -23,29 +23,6 @@ type playGameRepository struct {
 
 func NewPlayGameReposiory(db *sql.DB) *playGameRepository {
 	return &playGameRepository{db: db}
-}
-
-func (r *playGameRepository) SaveGameStatus(status models.GameStatus) (int, error) {
-	utils.LogInfo("Saving game status to database for game ID %d", status.GameId)
-
-	// Prepare the call to the stored procedure
-	stmt, err := r.db.Prepare("SELECT func_InsertGameStatus($1, $2, $3, $4, $5, $6, $7, $8)")
-	if err != nil {
-		utils.LogError("Failed to prepare save game status statement: %v", err)
-		return 0, fmt.Errorf("error preparing statement: %w", err)
-	}
-	defer stmt.Close()
-
-	_, err = stmt.Exec(status.GameId, status.Name, status.IsPlayed, status.Price,
-		status.PlayTime, status.Levels, status.PaymentReference, status.Code)
-
-	if err != nil {
-		utils.LogError("Failed to execute save game status for game ID %d: %v", status.GameId, err)
-		return 0, fmt.Errorf("error executing function: %w", err)
-	}
-
-	utils.LogInfo("Successfully saved game status for game ID %d", status.GameId)
-	return 1, nil
 }
 
 func (r *playGameRepository) ValidateTimeAndPrice(gameId uint16, price uint16, playTime *uint16) error {
@@ -98,10 +75,10 @@ func (r *playGameRepository) ValidateLevelsAndPrice(gameId uint16, price uint16,
 	return nil
 }
 
-func (r *playGameRepository) GetGames() ([]models.GameResponse, error) {
-	utils.LogInfo("Fetching all games from database")
+func (r *playGameRepository) GetGames(arcadeId string) ([]models.GameResponse, error) {
 
-	rows, err := r.db.Query("Select * from func_GetGamesForUsers()")
+	utils.LogInfo("Fetching all games from database")
+	rows, err := r.db.Query("Select * from func_GetGamesForUsers($1)", arcadeId)
 
 	if err != nil {
 		utils.LogError("Failed to fetch games from database: %v", err)
@@ -122,6 +99,24 @@ func (r *playGameRepository) GetGames() ([]models.GameResponse, error) {
 	}
 
 	return games, nil
+}
+
+func (r *playGameRepository) FetchGameDetails(gameId uint16) (models.GameDetails, error) {
+
+	var details models.GameDetails
+	stmt, err := r.db.Prepare(`SELECT "system", "rom" FROM "Games" WHERE id = $1`)
+	if err != nil {
+		return details, fmt.Errorf("error preparing statement: %w", err)
+	}
+
+	defer stmt.Close()
+	err = stmt.QueryRow(gameId).Scan(&details.SystemName, &details.Rom)
+
+	if err != nil {
+		return details, fmt.Errorf("error fetching game details: %w", err)
+	}
+
+	return details, nil
 }
 
 func (r *playGameRepository) FetchPrices() (models.PriceMap, error) {
@@ -168,7 +163,7 @@ func (r *playGameRepository) CheckGameCode(code string) (models.GameDetails, err
 
 	var defaultTime = uint16(0)
 	var gamedetails models.GameDetails
-	gamedetails.Time = defaultTime
+	gamedetails.Time = &defaultTime
 	stmt, err := r.db.
 		Prepare("SELECT is_played, is_timed, level_limit, time_limit, system, rom FROM func_CheckGameCode($1)")
 

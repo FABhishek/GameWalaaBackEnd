@@ -12,7 +12,7 @@ type GameData struct {
 }
 
 type GameStatus struct {
-	Code             string
+	ArcadeId         string    `json:"arcade_id"`
 	Name             string    `json:"name"`
 	GameId           uint16    `json:"gameId"`
 	IsTimed          bool      `json:"isTimed"`
@@ -61,8 +61,8 @@ type LevelPrice struct {
 type GameDetails struct {
 	IsPlayed   bool    `json:"is_played"`
 	IsTimed    bool    `json:"is_Timed"`
-	Time       uint16  `json:"time"`
+	Time       *uint16 `json:"time"`
 	SystemName *string `json:"system"`
 	Rom        *string `json:"rom"`
-	Level      uint16  `json:"level"`
+	Level      *uint8  `json:"level"`
 }
