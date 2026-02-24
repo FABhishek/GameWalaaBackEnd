@@ -2,8 +2,8 @@ package services
 
 import (
 	"GameWala-Arcade/models"
-	"GameWala-Arcade/utils"
 	"GameWala-Arcade/repositories"
+	"GameWala-Arcade/utils"
 	"fmt"
 
 	"golang.org/x/crypto/bcrypt"

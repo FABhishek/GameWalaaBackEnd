@@ -12,6 +12,8 @@ import (
 	"GameWala-Arcade/config"
 	"GameWala-Arcade/utils"
 
+	mqtt "GameWala-Arcade/utils/mqtt"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -30,7 +32,7 @@ func main() {
 	db.Initialize()     // Initlialize the db based on the configs loaded.
 
 	redisStore := redis.NewClient(&redis.Options{
-		Addr:     "localhost:55003",
+		Addr:     "127.0.0.1:55000",
 		Password: "", // No password set
 		DB:       0,  // Use default DB
 	})
@@ -41,25 +43,38 @@ func main() {
 		log.Fatalf("Could not connect to Redis: %v", err)
 	}
 
+	// Initialize MQTT connections once
+	mqttService, err := mqtt.NewMQTTService(
+		"tcp://localhost:1883",
+		"backend-server",
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// cors
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:xyz"}, // Allow the frontend URL
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true, // Allow cookies to be sent with cross-origin requests
 	}))
+
+	arcadeRepository := repositories.NewArcadeRepository(db.DB)
+	ArcadeService := services.NewArcadeService(arcadeRepository)
 
 	adminConsoleRepository := repositories.NewAdminConsoleRepository(db.DB)
 	adminConsoleService := services.NewAdminConsoleService(adminConsoleRepository)
 	adminConsoleHandler := handlers.NewAdminConsoleHandler(adminConsoleService)
 
-	playGameRespository := repositories.NewPlayGameReposiory(db.DB)
-	playGameService := services.NewPlayGameService(playGameRespository, redisStore)
-	playGameHandler := handlers.NewPlayGameHandler(playGameService)
+	playGameRepository := repositories.NewPlayGameReposiory(db.DB)
+	playGameService := services.NewPlayGameService(playGameRepository, redisStore)
+	handlePublishService := services.NewConnectionToBrokerService(mqttService, playGameRepository)
+	playGameHandler := handlers.NewPlayGameHandler(playGameService, ArcadeService)
 
 	handlePaymentRepository := repositories.NewHandlePaymentReposiory(db.DB)
-	handlePaymentService := services.NewHandlePaymentService(handlePaymentRepository)
-	handlePaymentHandler := handlers.NewHandlePaymentHandler(handlePaymentService)
+	handlePaymentService := services.NewHandlePaymentService(handlePaymentRepository, playGameRepository)
+	handlePaymentHandler := handlers.NewHandlePaymentHandler(handlePaymentService, handlePublishService, ArcadeService)
 
 	marketPlaceRepository := repositories.NewMarketPlaceReposiory(db.DB)
 	marketPlaceService := services.NewMarketPlaceService(marketPlaceRepository)
