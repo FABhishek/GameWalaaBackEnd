@@ -60,15 +60,37 @@ func (h *handlePaymentHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	amount := c.Param("amount")
-	amount_inr, _ := strconv.Atoi(amount)
 	client := razorpay.NewClient(config.GetString("key_id"), config.GetString("key_secret"))
 	receipt := fmt.Sprintf("txn_%d", time.Now().Unix())
+
+	// 1. Fetch the vendor's Razorpay Account ID (linked to this specific arcade)
+	// You should store this in your database mapped to the arcade_id
+	vendorAccountID, err := h.ArcadeService.GetRazorpayAccountID(arcade_id)
+	if err != nil || vendorAccountID == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Vendor payout account not configured"})
+		return
+	}
+
+	amount := c.Param("amount")
+	amount_inr, _ := strconv.Atoi(amount)
+
+	// 2. Calculate how much goes to the vendor and how much you keep
+	// Razorpay amounts are in paise (e.g., 10000 = ₹100)
+	vendorShare := int(float64(amount_inr) * 0.80) // Example: Give 80% to vendor, you keep 20%
 
 	data := map[string]interface{}{
 		"amount":   amount_inr,
 		"currency": "INR",
-		"receipt":  receipt}
+		"receipt":  receipt,
+		"transfers": []map[string]interface{}{
+			{
+				"account":           vendorAccountID, // The linked account ID (acc_XXXXX)
+				"amount":            vendorShare,     // Amount to route to them in paise
+				"currency":          "INR",
+				"on_order_creation": 1, // Settles automatically when customer pays this order
+			},
+		},
+	}
 
 	body, err := client.Order.Create(data, map[string]string{}) // 2nd param optional
 	if err == nil {
